@@ -1,0 +1,40 @@
+name: .NET
+
+on:
+  push:
+    branches: [ "master" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+      
+    - name: Build the Docker image
+      working-directory: ${{ github.workspace }}
+      run: docker build . -t ${{ secrets.DOCKERHUB_USERNAME }}/cicd-docker:latest
+
+    - name: Log into Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Push the image to Docker Hub
+      run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/cicd-docker
+
+    - name: Pull the image to VM
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.SSH_HOST }}
+        username: ${{ secrets.SSH_USERNAME }}
+        key: ${{ secrets.SSH_KEY }}
+        passphrase: ${{ secrets.SSH_PASSPHRASE }}
+        script: |
+            docker image pull ${{ secrets.DOCKERHUB_USERNAME }}/cicd-docker:latest
+            docker container stop cicd-docker-prod
+            docker container prune -f
+            docker run -d --name cicd-docker-prod --restart unless-stopped -p 8080:8080 ${{ secrets.DOCKERHUB_USERNAME }}/cicd-docker:latest
+            docker image prune -f
